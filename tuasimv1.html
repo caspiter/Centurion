@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbital Debris Sim</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --red:#ff4d4d;--yellow:#ffd600;--cyan:#00e5ff;--green:#00e676;--orange:#ff9f43;
+  --dim:#ffffff14;--text:#dde3ee;--muted:#52596b;
+  --font-mono:'Space Mono',monospace;--font-display:'Syne',sans-serif;
+}
+html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:var(--font-mono);color:var(--text)}
+#canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+
+/* HUD */
+#hud{position:fixed;inset:0;pointer-events:none;z-index:10}
+
+/* corners */
+.corner{position:absolute;width:18px;height:18px}
+.corner-tl{top:14px;left:14px;border-top:1px solid rgba(255,255,255,0.18);border-left:1px solid rgba(255,255,255,0.18)}
+.corner-tr{top:14px;right:14px;border-top:1px solid rgba(255,255,255,0.18);border-right:1px solid rgba(255,255,255,0.18)}
+.corner-bl{bottom:14px;left:14px;border-bottom:1px solid rgba(255,255,255,0.18);border-left:1px solid rgba(255,255,255,0.18)}
+.corner-br{bottom:14px;right:14px;border-bottom:1px solid rgba(255,255,255,0.18);border-right:1px solid rgba(255,255,255,0.18)}
+
+/* top bar */
+#top-bar{
+  position:absolute;top:0;left:0;right:0;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px 28px 0;
+}
+.title-main{font-family:var(--font-display);font-weight:800;font-size:clamp(13px,1.5vw,19px);letter-spacing:0.13em;text-transform:uppercase;color:#fff}
+.title-sub{font-size:8.5px;letter-spacing:0.24em;color:var(--muted);text-transform:uppercase;margin-top:2px}
+.status-row{display:flex;align-items:center;gap:6px;font-size:9.5px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted)}
+.pulse-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 1.8s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.35;transform:scale(0.65)}}
+
+/* fleet panel — left */
+#fleet-panel{
+  position:absolute;left:24px;top:50%;transform:translateY(-50%);
+  display:flex;flex-direction:column;gap:10px;
+}
+.sat-row{display:flex;align-items:center;gap:8px;font-size:9px;letter-spacing:0.14em;text-transform:uppercase}
+.sat-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:background .3s,box-shadow .3s}
+.sat-label{color:var(--muted);min-width:54px}
+.sat-status{color:var(--muted);font-size:8px;letter-spacing:0.1em}
+
+/* legend — right */
+#legend{
+  position:absolute;top:60px;right:24px;
+  display:flex;flex-direction:column;gap:7px;
+}
+.li{display:flex;align-items:center;gap:8px;font-size:8.5px;letter-spacing:0.13em;text-transform:uppercase;color:var(--muted)}
+.ld{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.ll{width:14px;height:1.5px;flex-shrink:0;border-radius:1px}
+
+/* bottom bar */
+#bottom-bar{
+  position:absolute;bottom:0;left:0;right:0;
+  padding:0 28px 22px;
+  display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
+  pointer-events:none;
+}
+.btn-group{display:flex;gap:10px;pointer-events:all}
+.btn{
+  font-family:var(--font-mono);font-size:9.5px;letter-spacing:0.18em;text-transform:uppercase;
+  padding:10px 22px;border:1px solid var(--dim);border-radius:2px;
+  background:rgba(0,0,0,0.6);backdrop-filter:blur(14px);
+  color:var(--text);cursor:pointer;transition:all .18s;position:relative;overflow:hidden;
+}
+.btn::before{content:'';position:absolute;inset:0;background:rgba(255,255,255,0);transition:background .18s}
+.btn:hover::before{background:rgba(255,255,255,0.06)}
+.btn:active::before{background:rgba(255,255,255,0.13)}
+.btn-add{border-color:rgba(0,229,255,0.28);color:var(--cyan)}
+.btn-add:hover{border-color:rgba(0,229,255,0.65);box-shadow:0 0 20px rgba(0,229,255,0.12)}
+.btn-reset{border-color:rgba(255,77,77,0.22);color:var(--red)}
+.btn-reset:hover{border-color:rgba(255,77,77,0.6);box-shadow:0 0 20px rgba(255,77,77,0.1)}
+
+/* log */
+#log-wrap{max-width:320px;pointer-events:none}
+#log{font-size:9.5px;letter-spacing:0.08em;color:var(--muted);text-align:right;line-height:1.7}
+#log-sub{font-size:8px;letter-spacing:0.1em;color:#333f55;text-align:right;margin-top:2px}
+
+/* counters */
+#counters{
+  position:absolute;right:24px;bottom:80px;
+  display:flex;flex-direction:column;align-items:flex-end;gap:6px;
+}
+.cnt-row{display:flex;align-items:baseline;gap:6px}
+.cnt-val{font-family:var(--font-display);font-weight:800;font-size:clamp(22px,3vw,40px);color:#fff;line-height:1}
+.cnt-label{font-size:8px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted)}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="hud">
+  <div class="corner corner-tl"></div><div class="corner corner-tr"></div>
+  <div class="corner corner-bl"></div><div class="corner corner-br"></div>
+
+  <div id="top-bar">
+    <div>
+      <div class="title-main">Orbital Debris Shield</div>
+      <div class="title-sub">Otonom Uzay Çöp Temizleme Sistemi</div>
+    </div>
+    <div class="status-row"><div class="pulse-dot"></div>Filo Aktif</div>
+  </div>
+
+  <div id="fleet-panel">
+    <div class="sat-row"><div class="sat-dot" id="sd0" style="background:#ffd600"></div><span class="sat-label">SAT-01</span><span class="sat-status" id="ss0">Tarama</span></div>
+    <div class="sat-row"><div class="sat-dot" id="sd1" style="background:#ffd600"></div><span class="sat-label">SAT-02</span><span class="sat-status" id="ss1">Tarama</span></div>
+    <div class="sat-row"><div class="sat-dot" id="sd2" style="background:#ffd600"></div><span class="sat-label">SAT-03</span><span class="sat-status" id="ss2">Tarama</span></div>
+    <div class="sat-row"><div class="sat-dot" id="sd3" style="background:#ffd600"></div><span class="sat-label">SAT-04</span><span class="sat-status" id="ss3">Tarama</span></div>
+  </div>
+
+  <div id="legend">
+    <div class="li"><div class="ld" style="background:#ff6b6b"></div>Çöp Nesnesi</div>
+    <div class="li"><div class="ld" style="background:#ffd700"></div>Filo Uydusu</div>
+    <div class="li"><div class="ll" style="background:#ffd700;opacity:0.5"></div>Tarama Işını</div>
+    <div class="li"><div class="ll" style="background:#ff4444"></div>Silah Işını</div>
+    <div class="li"><div class="ll" style="background:#00e676"></div>GNSS Rapor</div>
+  </div>
+
+  <div id="counters">
+    <div class="cnt-row"><div class="cnt-val" id="cnt-active">0</div><div class="cnt-label">Aktif Nesne</div></div>
+    <div class="cnt-row"><div class="cnt-val" id="cnt-destroyed" style="color:var(--green)">0</div><div class="cnt-label">İmha Edilen</div></div>
+  </div>
+
+  <div id="bottom-bar">
+    <div class="btn-group">
+      <button class="btn btn-add" onclick="addDebris()">+ Nesne Ekle</button>
+      <button class="btn btn-add" onclick="addDebris();addDebris();addDebris()">+ Toplu Ekle (×3)</button>
+      <button class="btn btn-reset" onclick="resetAll()">Sıfırla</button>
+    </div>
+    <div id="log-wrap">
+      <div id="log">Filo yörüngede. Tarama aktif.</div>
+      <div id="log-sub"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+let W,H,CX,CY,SCALE;
+function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight;CX=W/2;CY=H/2;SCALE=Math.min(W,H)/660}
+resize();window.addEventListener('resize',resize);
+
+const BCX=330,BCY=330,EARTH_R=48;
+function altToPx(km){return EARTH_R+Math.log10(1+km/400)*175}
+const FLEET_R=altToPx(800);   // filo yörüngesi ~800km
+const DEBRIS_MIN=altToPx(200),DEBRIS_MAX=altToPx(1200);
+const R_GNSS=altToPx(35800);  // GEO (GNSS relay noktası için sembolik)
+
+function sx(x){return CX+(x-BCX)*SCALE}
+function sy(y){return CY+(y-BCY)*SCALE}
+function sr(r){return r*SCALE}
+
+let frame=0,destroyedCount=0;
+let debris=[],gnssFlashes=[];
+
+// Durum makinesi fazları
+const PHASE={SCAN:'scan',LOCK:'lock',FIRE:'fire',GNSS:'gnss',IDLE:'idle'};
+
+// 4 uydu filoya
+const SAT_COLORS=['#ffd700','#ffc107','#ffeb3b','#ffe082'];
+let fleet=Array.from({length:4},(_,i)=>({
+  id:i,
+  angle:(i/4)*Math.PI*2,
+  speed:0.0035+(i%2)*0.0005,
+  r:FLEET_R,
+  trail:[],
+  phase:PHASE.SCAN,
+  target:null,         // debris ref
+  scanBeam:{angle:0,sweep:0.06},
+  fireTimer:0,
+  gnssTimer:0,
+  lockTimer:0,
+  color:SAT_COLORS[i],
+  label:`SAT-0${i+1}`
+}));
+
+const stars=Array.from({length:280},()=>({x:Math.random()*660,y:Math.random()*660,r:Math.random()*1.3,b:0.08+Math.random()*0.65}));
+
+function logMsg(m,sub=''){
+  document.getElementById('log').textContent=m;
+  document.getElementById('log-sub').textContent=sub;
+}
+function updateCounters(){
+  document.getElementById('cnt-active').textContent=debris.length;
+  document.getElementById('cnt-destroyed').textContent=destroyedCount;
+}
+function setSatUI(i,status,color){
+  document.getElementById('ss'+i).textContent=status;
+  document.getElementById('sd'+i).style.background=color;
+  document.getElementById('sd'+i).style.boxShadow=color!=='#ffd700'?`0 0 8px ${color}`:'none';
+}
+
+function orbitPos(angle,r,ecc,tilt){
+  const a=r,b=r*(1-ecc);
+  const ex=a*Math.cos(angle),ey=b*Math.sin(angle);
+  return{x:BCX+ex*Math.cos(tilt)-ey*Math.sin(tilt),y:BCY+ex*Math.sin(tilt)+ey*Math.cos(tilt)};
+}
+function dPos(d){return orbitPos(d.angle,d.r,d.ecc,d.tilt)}
+function satPos(s){return{x:BCX+Math.cos(s.angle)*s.r,y:BCY+Math.sin(s.angle)*s.r}}
+function dist2(a,b){const dx=a.x-b.x,dy=a.y-b.y;return dx*dx+dy*dy}
+function pxToAlt(px){return(400*(Math.pow(10,(px-EARTH_R)/175)-1)).toFixed(0)}
+
+function addDebris(){
+  const r=DEBRIS_MIN+Math.random()*(DEBRIS_MAX-DEBRIS_MIN);
+  debris.push({
+    angle:Math.random()*Math.PI*2,r,
+    ecc:0.04+Math.random()*0.18,
+    tilt:Math.random()*Math.PI*2,
+    speed:(0.004+Math.random()*0.007)*(Math.random()<0.5?1:-1),
+    size:3+Math.random()*13,
+    state:'alive',  // alive | targeted | dying | dead
+    trail:[],id:Date.now()+Math.random()
+  });
+  updateCounters();
+  logMsg('Bilinmeyen nesne tespit kuyruğuna alındı.','Filo tarama devam ediyor...');
+}
+
+function resetAll(){
+  debris=[];gnssFlashes=[];destroyedCount=0;
+  fleet.forEach((s,i)=>{s.phase=PHASE.SCAN;s.target=null;s.fireTimer=0;s.gnssTimer=0;s.lockTimer=0;setSatUI(i,'Tarama','#ffd700')});
+  updateCounters();
+  logMsg('Sistem sıfırlandı.','Filo tarama modunda.');
+}
+
+// ─── AI: uydu kendi hedefini seçer ───
+function aiUpdate(){
+  fleet.forEach((s,i)=>{
+    if(s.phase===PHASE.SCAN){
+      // tarama ışını döner
+      s.scanBeam.angle+=0.04;
+      // henüz hedeflenmemiş çöp var mı?
+      const free=debris.filter(d=>d.state==='alive'&&!fleet.some(ss=>ss.target===d));
+      if(free.length){
+        // en yakın çöpü seç
+        const sp=satPos(s);
+        let best=null,bestD=Infinity;
+        free.forEach(d=>{const dp=dPos(d);const dd=dist2(sp,dp);if(dd<bestD){bestD=dd;best=d}});
+        // tarama ışını çöpe yeterince yakınsa kilitle
+        const dp=dPos(best);
+        const beamAng=s.scanBeam.angle%(Math.PI*2);
+        const toDebrisAng=Math.atan2(dp.y-BCY-(satPos(s).y-BCY),dp.x-BCX-(satPos(s).x-BCX));
+        // mesafe koşulu: sadece belirli bir range'de
+        if(Math.sqrt(bestD)*SCALE<300*SCALE){
+          s.target=best;best.state='targeted';
+          s.phase=PHASE.LOCK;s.lockTimer=0;
+          setSatUI(i,'Kilitleniyor','#ff9f43');
+          logMsg(`${s.label}: Nesne kilitlendi — ${pxToAlt(best.r)}km`,'Silah sistemi hazırlanıyor...');
+        }
+      }
+    } else if(s.phase===PHASE.LOCK){
+      s.lockTimer++;
+      if(s.lockTimer>55){
+        s.phase=PHASE.FIRE;s.fireTimer=0;
+        setSatUI(i,'Ateş','#ff4444');
+        logMsg(`${s.label}: Silah ışını aktif!`,'Nesne imha ediliyor...');
+      }
+    } else if(s.phase===PHASE.FIRE){
+      s.fireTimer++;
+      if(s.target&&s.target.state==='targeted'){
+        // yörünge düşür
+        s.target.r=Math.max(s.target.r-0.6,EARTH_R-8);
+        s.target.ecc=Math.min(s.target.ecc+0.004,0.85);
+        s.target.speed*=0.988;
+      }
+      if(s.fireTimer>90||(s.target&&s.target.r<=EARTH_R+2)){
+        // imha tamamlandı
+        if(s.target){
+          const idx=debris.indexOf(s.target);
+          if(idx>=0)debris.splice(idx,1);
+          destroyedCount++;updateCounters();
+        }
+        // GNSS flash başlat
+        const sp=satPos(s);
+        gnssFlashes.push({x:sp.x,y:sp.y,timer:0,satId:i,satLabel:s.label});
+        s.phase=PHASE.GNSS;s.gnssTimer=0;s.target=null;
+        setSatUI(i,'GNSS Rapor','#00e676');
+        logMsg(`${s.label}: İmha tamamlandı.`,'GNSS üzerinden yer istasyonuna rapor iletiliyor...');
+      }
+    } else if(s.phase===PHASE.GNSS){
+      s.gnssTimer++;
+      if(s.gnssTimer>70){
+        s.phase=PHASE.SCAN;s.target=null;
+        setSatUI(i,'Tarama','#ffd700');
+        logMsg(`${s.label}: Rapor iletildi. Tarama devam ediyor.`,'');
+      }
+    }
+  });
+}
+
+// ─── DRAW ───
+function drawStars(){
+  stars.forEach(s=>{
+    const b=s.b+0.07*Math.sin(frame*0.011+s.x*0.06);
+    ctx.fillStyle=`rgba(255,255,255,${b})`;
+    ctx.beginPath();ctx.arc(sx(s.x),sy(s.y),s.r*Math.max(SCALE,0.5),0,Math.PI*2);ctx.fill();
+  });
+}
+
+function drawZones(){
+  // çöp bandı
+  ctx.fillStyle='rgba(255,70,70,0.025)';
+  ctx.beginPath();ctx.arc(sx(BCX),sy(BCY),sr(DEBRIS_MAX+4),0,Math.PI*2);
+  ctx.arc(sx(BCX),sy(BCY),sr(DEBRIS_MIN-4),0,Math.PI*2,true);ctx.fill();
+  // filo yörüngesi
+  ctx.strokeStyle='rgba(255,215,0,0.08)';ctx.lineWidth=0.6;ctx.setLineDash([2,8]);
+  ctx.beginPath();ctx.arc(sx(BCX),sy(BCY),sr(FLEET_R),0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+  // ring labels
+  const rings=[
+    [DEBRIS_MIN,'rgba(255,80,80,0.2)',[3,5],'200km','rgba(255,90,90,0.35)'],
+    [DEBRIS_MAX,'rgba(255,80,80,0.2)',[3,5],'1200km','rgba(255,90,90,0.35)'],
+    [FLEET_R,'rgba(255,215,0,0.15)',[2,8],'Filo ~800km','rgba(255,215,0,0.3)'],
+  ];
+  rings.forEach(([r,sc,dash,label,fc])=>{
+    ctx.strokeStyle=sc;ctx.lineWidth=0.6;ctx.setLineDash(dash);
+    ctx.beginPath();ctx.arc(sx(BCX),sy(BCY),sr(r),0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=fc;ctx.font=`${Math.max(7,8.5*SCALE)}px 'Space Mono',monospace`;ctx.textAlign='center';
+    ctx.fillText(label,sx(BCX),sy(BCY)-sr(r)-5);
+  });
+}
+
+function drawEarth(){
+  const x=sx(BCX),y=sy(BCY),R=sr(EARTH_R);
+  const eg=ctx.createRadialGradient(x,y,R,x,y,R*2.8);
+  eg.addColorStop(0,'rgba(40,120,230,0.1)');eg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=eg;ctx.beginPath();ctx.arc(x,y,R*2.8,0,Math.PI*2);ctx.fill();
+  const g=ctx.createRadialGradient(x-R*0.22,y-R*0.22,R*0.08,x,y,R);
+  g.addColorStop(0,'#2468cc');g.addColorStop(0.45,'#1a4fa0');g.addColorStop(1,'#0c2258');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,R,0,Math.PI*2);ctx.fill();
+  [[-9,-7,16,10,0.3],[11,5,12,8,-0.2],[-3,17,9,5,0.1],[16,-14,7,5,0.5]].forEach(([dx,dy,rw,rh,rot])=>{
+    ctx.save();ctx.translate(x+dx*SCALE,y+dy*SCALE);ctx.rotate(rot);
+    ctx.fillStyle='rgba(36,120,52,0.52)';ctx.beginPath();ctx.ellipse(0,0,rw*SCALE,rh*SCALE,0,0,Math.PI*2);ctx.fill();ctx.restore();
+  });
+  const atm=ctx.createRadialGradient(x,y,R-2,x,y,R+13*SCALE);
+  atm.addColorStop(0,'rgba(90,175,255,0.4)');atm.addColorStop(1,'rgba(90,175,255,0)');
+  ctx.fillStyle=atm;ctx.beginPath();ctx.arc(x,y,R+13*SCALE,0,Math.PI*2);ctx.fill();
+}
+
+function drawDebris(){
+  debris.forEach(d=>{
+    const p=dPos(d),px=sx(p.x),py=sy(p.y);
+    // yörünge
+    const a=d.r,b=d.r*(1-d.ecc);
+    ctx.save();ctx.translate(sx(BCX),sy(BCY));ctx.rotate(d.tilt);ctx.scale(SCALE,SCALE);
+    const ecol=d.state==='targeted'?'255,68,68':'90,90,130';
+    ctx.strokeStyle=`rgba(${ecol},0.18)`;ctx.lineWidth=0.7/SCALE;ctx.setLineDash([3,5]);
+    ctx.beginPath();ctx.ellipse(0,0,a,b,0,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+    ctx.restore();
+    // trail
+    if(d.trail.length>2){
+      ctx.beginPath();
+      d.trail.forEach((tp,i)=>i===0?ctx.moveTo(sx(tp.x),sy(tp.y)):ctx.lineTo(sx(tp.x),sy(tp.y)));
+      ctx.strokeStyle=d.state==='targeted'?'rgba(255,68,68,0.2)':'rgba(255,100,100,0.15)';
+      ctx.lineWidth=1;ctx.stroke();
+    }
+    // body
+    const sz=Math.max(d.size*0.3,3)*SCALE;
+    if(d.state==='targeted'){
+      const pulse=0.08+0.1*Math.sin(frame*0.15);
+      ctx.fillStyle=`rgba(255,50,50,${pulse})`;ctx.beginPath();ctx.arc(px,py,sz+10*SCALE,0,Math.PI*2);ctx.fill();
+      // hedef çarpı
+      ctx.strokeStyle='rgba(255,80,80,0.55)';ctx.lineWidth=0.8;
+      const cs=6*SCALE;
+      ctx.beginPath();ctx.moveTo(px-cs,py-cs);ctx.lineTo(px+cs,py+cs);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(px+cs,py-cs);ctx.lineTo(px-cs,py+cs);ctx.stroke();
+    }
+    ctx.fillStyle=d.state==='targeted'?'#ff4444':'#ff6b6b';
+    ctx.beginPath();ctx.arc(px,py,sz,0,Math.PI*2);ctx.fill();
+    // label
+    ctx.fillStyle='rgba(255,130,130,0.7)';ctx.font=`${Math.max(7,8*SCALE)}px 'Space Mono',monospace`;ctx.textAlign='left';
+    ctx.fillText(`${pxToAlt(d.r)}km`,px+sz+4*SCALE,py+3);
+  });
+}
+
+function drawFleet(){
+  fleet.forEach((s,i)=>{
+    s.angle+=s.speed;
+    const lx=BCX+Math.cos(s.angle)*s.r,ly=BCY+Math.sin(s.angle)*s.r;
+    const x=sx(lx),y=sy(ly);
+    s.trail.push({x:lx,y:ly});if(s.trail.length>28)s.trail.shift();
+
+    // trail
+    s.trail.forEach((p,ti)=>{
+      ctx.fillStyle=`rgba(255,215,0,${(ti/s.trail.length)*0.15})`;
+      ctx.beginPath();ctx.arc(sx(p.x),sy(p.y),1.2*SCALE,0,Math.PI*2);ctx.fill();
+    });
+
+    // ── tarama ışını ──
+    if(s.phase===PHASE.SCAN){
+      s.scanBeam.angle+=0.04;
+      const beamLen=sr(55);
+      for(let b=0;b<3;b++){
+        const ba=s.scanBeam.angle+b*(Math.PI*2/3);
+        const bx=x+Math.cos(ba)*beamLen,by=y+Math.sin(ba)*beamLen;
+        const alpha=0.05+0.06*Math.sin(frame*0.08+b*1.2);
+        ctx.strokeStyle=`rgba(255,215,0,${alpha})`;ctx.lineWidth=1;
+        ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(bx,by);ctx.stroke();
+      }
+    }
+
+    // ── kilitleme ışını ──
+    if(s.phase===PHASE.LOCK&&s.target){
+      const dp=dPos(s.target),tx=sx(dp.x),ty=sy(dp.y);
+      const prog=s.lockTimer/55;
+      const alpha=0.15+0.3*Math.sin(frame*0.2)*prog;
+      ctx.strokeStyle=`rgba(255,160,0,${alpha})`;ctx.lineWidth=1.2;ctx.setLineDash([3,4]);
+      ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(tx,ty);ctx.stroke();ctx.setLineDash([]);
+      // kilit halkası
+      const nr=(1-prog)*30*SCALE;
+      ctx.strokeStyle=`rgba(255,160,0,${0.4*prog})`;ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(tx,ty,nr,0,Math.PI*2);ctx.stroke();
+    }
+
+    // ── silah ışını ──
+    if(s.phase===PHASE.FIRE&&s.target){
+      const dp=dPos(s.target),tx=sx(dp.x),ty=sy(dp.y);
+      // ana ışın
+      ctx.strokeStyle='rgba(255,60,60,0.75)';ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(tx,ty);ctx.stroke();
+      // parlak çekirdek
+      ctx.strokeStyle='rgba(255,200,200,0.9)';ctx.lineWidth=0.6;
+      ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(tx,ty);ctx.stroke();
+      // glow
+      ctx.strokeStyle='rgba(255,40,40,0.1)';ctx.lineWidth=10;
+      ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(tx,ty);ctx.stroke();
+      // parçacıklar
+      const phase2=(frame%18)/18;
+      for(let p=0;p<6;p++){
+        const t=(phase2+p/6)%1;
+        ctx.fillStyle=`rgba(255,120,0,${0.95*(1-t)})`;
+        ctx.beginPath();ctx.arc(x+(tx-x)*t,y+(ty-y)*t,2.2*SCALE,0,Math.PI*2);ctx.fill();
+      }
+    }
+
+    // ── GNSS rapor ışını ──
+    if(s.phase===PHASE.GNSS){
+      const prog=Math.min(s.gnssTimer/70,1);
+      // uydudan Dünya'ya inen ok
+      const ex=sx(BCX),ey=sy(BCY);
+      const t=prog;
+      const midx=x+(ex-x)*t,midy=y+(ey-y)*t;
+      const alpha=0.5*(1-prog*0.5);
+      ctx.strokeStyle=`rgba(0,230,118,${alpha})`;ctx.lineWidth=1.2;ctx.setLineDash([4,5]);
+      ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(midx,midy);ctx.stroke();ctx.setLineDash([]);
+      // hareket eden nokta
+      ctx.fillStyle=`rgba(0,230,118,0.9)`;
+      ctx.beginPath();ctx.arc(midx,midy,3*SCALE,0,Math.PI*2);ctx.fill();
+      // Dünya'da parlama
+      if(prog>0.7){
+        const glow=(prog-0.7)/0.3;
+        ctx.fillStyle=`rgba(0,230,118,${glow*0.3})`;
+        ctx.beginPath();ctx.arc(ex,ey,sr(EARTH_R*1.2+glow*8),0,Math.PI*2);ctx.fill();
+      }
+    }
+
+    // gövde
+    const baseCol=s.color;
+    const glowCol=s.phase===PHASE.FIRE?'rgba(255,60,60,0.35)':s.phase===PHASE.LOCK?'rgba(255,160,0,0.28)':s.phase===PHASE.GNSS?'rgba(0,230,118,0.28)':'rgba(255,215,0,0.15)';
+    ctx.fillStyle=glowCol;ctx.beginPath();ctx.arc(x,y,12*SCALE,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=baseCol;ctx.beginPath();ctx.arc(x,y,6*SCALE,0,Math.PI*2);ctx.fill();
+    // paneller
+    const pa=s.angle+Math.PI/2;
+    const pc=s.phase===PHASE.FIRE?'rgba(255,100,100,0.8)':'rgba(255,200,0,0.7)';
+    ctx.strokeStyle=pc;ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(x+Math.cos(pa)*6*SCALE,y+Math.sin(pa)*6*SCALE);ctx.lineTo(x+Math.cos(pa)*15*SCALE,y+Math.sin(pa)*15*SCALE);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(x-Math.cos(pa)*6*SCALE,y-Math.sin(pa)*6*SCALE);ctx.lineTo(x-Math.cos(pa)*15*SCALE,y-Math.sin(pa)*15*SCALE);ctx.stroke();
+    // label
+    ctx.fillStyle=`rgba(255,215,0,0.7)`;ctx.font=`${Math.max(7,8*SCALE)}px 'Space Mono',monospace`;ctx.textAlign='left';
+    ctx.fillText(s.label,x+11*SCALE,y-8*SCALE);
+  });
+}
+
+function drawGnssFlashes(){
+  for(let i=gnssFlashes.length-1;i>=0;i--){
+    const f=gnssFlashes[i];f.timer++;
+    if(f.timer>70){gnssFlashes.splice(i,1);continue}
+    // küçük patlama efekti orijin noktasında
+    const px=sx(f.x),py=sy(f.y),p=f.timer/70;
+    const alpha=0.7*(1-p);
+    ctx.strokeStyle=`rgba(0,230,118,${alpha})`;ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(px,py,p*18*SCALE,0,Math.PI*2);ctx.stroke();
+  }
+}
+
+// ─── UPDATE ───
+function update(){
+  aiUpdate();
+  debris.forEach(d=>{
+    d.angle+=d.speed;
+    const p=dPos(d);
+    d.trail.push({x:p.x,y:p.y});
+    if(d.trail.length>45)d.trail.shift();
+  });
+}
+
+function render(){
+  ctx.clearRect(0,0,W,H);
+  drawStars();drawZones();drawEarth();
+  drawDebris();
+  drawFleet();
+  drawGnssFlashes();
+  frame++;
+}
+
+function loop(){update();render();requestAnimationFrame(loop)}
+loop();
+</script>
+</body>
+</html>
